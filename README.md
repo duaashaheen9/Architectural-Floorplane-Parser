@@ -1,51 +1,36 @@
-# Architectural Floorplan Parser: Hybrid YOLO & Transformer Framework
+Architectural Floorplan Parser (Phase 1: YOLO + Segmentation)
 
-This repository features the core computer vision pipeline of an end-to-end graduation project designed to parse, segment, and vectorize unstructured physical floor plans into hierarchical, structured geometric data and topological JSON coordinates.
+Phase 1 of a two-part team graduation project. It converts a floor-plan image into structured room data (JSON). Phase 2, Transformer-Driven-Network-Architect, uses that JSON to design a wired network with VLAN zoning.
 
-The system demonstrates high-fidelity performance (**~88% generalization accuracy**) in parsing structural elements, isolating distinct multi-class structural blocks, and extracting pixel topologies despite dense standard dimensions, architectural annotations, and multilingual text interference.
+What it does
+Input: a floor-plan image.
+Output: rooms_data.json with, for each room: center, four corner points, area in pixels, a transparent-background crop, and a Transformer feature vector. Also a labeled overlay image.
+Validity check: if YOLO finds no room (class 1) at confidence 0.3, the image is rejected (is_valid_blueprint: false).
+Results
+Model	Task	Data	Metric	Result
+ResNet50 + Transformer segmentation	Binary room mask	CubiCasa5K high_quality_architectural subset: 3,217 train / 245 validation plans	Pixel-level IoU, threshold 0.5, 512x512	about 85%
+YOLO (trained by a teammate)	Room detection	CubiCasa5K	mAP@0.5	TODO
+IoU is computed over all pixels of the validation set (total intersection / total union), not averaged per image.
+Source: the training-log screenshots in results/. Validation IoU was 0.853-0.855 over epochs 33-39, after which early stopping (patience 10) ended training and restored the best weights. The full log was lost, so the exact value of the restored weights is not recorded.
+The validation split also chose the best weights, so this is a validation score, not a test score.
+Method
+Masks. The COCO annotations used (train_coco_pt.json, val_coco_pt.json) contain a single category, room. Each plan's mask is the union of its room annotations. A room without a polygon is filled from its bounding box.
+Negative samples. 2,000 natural images from COCO 2017 (val2017) with all-zero masks, so the segmentation model learns to predict nothing on images that are not floor plans. Each batch has 4 images: 2 floor plans and 2 negatives. An epoch is 1,000 steps.
+Segmentation model. ResNet50 encoder (ImageNet-initialized) -> 1x1 conv -> 16x16 token sequence -> 4 Transformer blocks -> decoder with three skip connections -> sigmoid mask. TODO: state whether the backbone was frozen throughout.
+Training. Kaggle notebook, Tesla P100 16 GB. Loss: 0.5 x binary cross-entropy + 0.5 x Dice. Adam, flips, 90-degree rotations, brightness/contrast jitter. Stage 1 (training/01_train_segmentation.py): up to 30 epochs at lr 1e-4, then up to epoch 100 at lr 1e-5. Stage 2 (training/02_finetune_segmentation.py): continued from the stage-1 weights, 20 epochs at lr 1e-4, then lr 1e-5 up to epoch 50 with ReduceLROnPlateau. Early stopping on validation loss stopped stage 2 at epoch 39.
+YOLO. A separate room detector trained on CubiCasa5K by a teammate. TODO: label names (class 1 = ?), epochs, image size.
+Inference (predict_floorplan_combined). YOLO boxes -> segmentation probability map -> per box: crop with 5 px padding, Gaussian blur, Otsu threshold, morphological close -> largest contour -> corners (4-point polygon, or minimum-area rectangle) -> center, area, crop, and the Transformer feature at the room center -> JSON and overlay.
+Limitations
+The IoU measures the binary room-vs-background mask. It is not a per-room detection accuracy.
+Each epoch uses 2,000 of the 3,217 training plans, because the training stream stops when the 2,000 negative images run out.
+Ground-truth masks mix polygons and bounding boxes. Stage-1 and stage-2 masks were built differently, so their IoU values are not comparable.
+Corner points are a 4-point approximation, so non-rectangular rooms are simplified (the full contour is used for the overlay, area and crop).
+Trained and evaluated on CubiCasa5K only; other drawing styles are untested.
+Model weights are not uploaded yet (slow connection). Available on request.
+Run
 
-## 🧠 System Architecture Overview
-The pipeline utilizes a **Hybrid Dual-Model Approach** to combine localized object detection with global contextual semantics:
+Requirements: Python 3.8+, TensorFlow 2.x, Ultralytics, OpenCV, NumPy. pycocotools is needed for training.
 
-1. **Spatial Localization (YOLO):** A customized YOLO framework identifies and extracts tight bounding boxes for distinct architectural layout units while enforcing strict **Non-Maximum Suppression (NMS)** to eradicate redundant overlaps.
-2. **Contextual Segmentation & Feature Extraction (ResNet50 + Transformer):** A ResNet50 CNN backbone extracts dense spatial layers, which are reshaped and fused with learnable positional embeddings. A 4-layer deep **Transformer Encoder Block** processes these sequences to model global context boundaries, which are then passed into a Transpose CNN decoder to map raw structures into dynamic segmentation masks.
+python main.py
 
-By merging YOLO's explicit geometry with the Transformer's dense feature vectors (`transformer_features`), the script yields clean coordinate contours and centralized JSON structural tokens.
-
-## 📊 Performance & Visual Results
-The model excels at capturing recurrent parallel layouts, dynamic service zones, and open structural configurations. It actively filters structural noise and retains sharp, straight geometric boundaries.
-
-### Inference Samples:
-Below are samples of the output generated by the hybrid pipeline, illustrating detected structural centers (red keypoints) and bounding contours (green polygons):
-
-| Structural Layout Segmentation | Institutional Space Parsing |
-|---|---|
-| <img src="labeled_flo4orplan.png" width="400"/> | <img src="labeled_floorplan.png" width="400"/> |
-| **Robust Functional Boundaries:** Effectively isolates distinct structural blocks and dynamic layout units, even when cross-referenced with dense bilingual text and architectural dimension marks. | **High Mass-Scale Recall:** Demonstrates strong capacity in tracking and encapsulating high-density, sequential interior zones across expansive architectural footprints. |
-
-## 🛠️ Pipeline Features
-- **Adaptive Functional Tracking:** Evaluates spatial metrics using dynamic threshold metrics rather than static, rigid thresholding to avoid missing wide, open architectural spaces.
-- **Hierarchical Topologies:** Outputs structured data dictionary vectors directly mapping extracted element IDs, center mass keys, corner coordinates, and latent transformer arrays.
-- **Automated Visualization:** Automatically renders labeled contour overlays and dynamic polygon wrappers over complex multi-scale layouts.
-
-## 💻 Dependencies
-- Python 3.8+
-- TensorFlow 2.x
-- Ultralytics (YOLO)
-- OpenCV
-- NumPy
-
-## 📂 Quick Start
-
-1. **Download the Trained Weights:**
-   Since model weight files are too large for GitHub storage limits, download the pre-trained weights from your cloud storage links:
-   - [Download YOLO Weights (`best.pt`)]
-   - [Download Segmentation Weights (`floorplan_segmentation_final.keras`)]
-
-2. **Setup Environment:**
-   Place both downloaded weight files directly into the root directory of this repository.
-
-3. **Run the Pipeline:**
-   Execute the hybrid parsing script:
-   ```bash
-   python main.py
+TODO: if there is a Flask API (/predict, /health), document it here. Add the YOLO training script and the two log screenshots (results/).
