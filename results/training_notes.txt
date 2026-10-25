@@ -1,0 +1,15 @@
+Partial training notes (transcribed from the two screenshots in this folder).
+The full training output was lost, so this is NOT the complete log.
+
+Script: training/02_finetune_segmentation.py (Kaggle notebook, Tesla P100)
+Training samples: 3217, Validation: 245
+Phase 1: frozen backbone (epochs 1-20); Phase 2: epochs 21-50
+Training ended after epoch 39 (early stopping, patience 10)
+
+Epoch 33: iou 0.8544  val_iou 0.8533  val_loss 0.1666
+Epoch 34: iou 0.8542  val_iou 0.8541  val_loss 0.1658
+Epoch 35: iou 0.8555  val_iou 0.8545  val_loss 0.1650
+Epoch 36: iou 0.8559  val_iou 0.8546  val_loss 0.1650
+Epoch 37: iou 0.8559  val_iou 0.8545  val_loss 0.1659
+Epoch 38: iou 0.8560  val_iou 0.8539  val_loss 0.1657
+Epoch 39: iou 0.8562  val_iou 0.8536  val_loss 0.1663
